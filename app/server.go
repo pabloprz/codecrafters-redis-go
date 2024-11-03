@@ -23,7 +23,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		handleClientConn(conn)
+		go handleClientConn(conn)
 	}
 }
 
