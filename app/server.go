@@ -33,13 +33,15 @@ func handleClientConn(conn net.Conn) {
 	fmt.Printf("new connection from %s\n", conn.LocalAddr().String())
 
 	buffer := make([]byte, 1028)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		fmt.Println("Error reading connection: ", err.Error())
-		return
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			fmt.Println("Error reading connection: ", err.Error())
+			return
+		}
+
+		fmt.Printf("Received %d bytes %s\n", n, buffer[:n])
+
+		conn.Write([]byte("+PONG\r\n"))
 	}
-
-	fmt.Printf("Received %d bytes %b", n, buffer[:n])
-
-	conn.Write([]byte("+PONG\r\n"))
 }
