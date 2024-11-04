@@ -6,8 +6,20 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/utils"
+)
+
+type safeCache struct {
+	sync.RWMutex
+	stored map[string]string
+}
+
+var (
+	cache     safeCache
+	NULL_RESP = []byte("$-1\r\n")
 )
 
 func main() {
@@ -17,6 +29,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer listener.Close()
+
+	cache = safeCache{
+		stored: make(map[string]string),
+	}
 
 	fmt.Println("started redis server on port 6379")
 
@@ -63,19 +79,52 @@ func handleClientConn(conn net.Conn) {
 	}
 }
 
-func handleCommand(resp *utils.Resp) ([]byte, error) {
-	if resp.DataType != utils.ARRAY {
+func handleCommand(input *utils.Resp) ([]byte, error) {
+	if input.DataType != utils.ARRAY {
 		return nil, errors.New("invalid client input, was expecting array")
 	}
 
-	cmd := resp.Content.([]utils.Resp)
-	switch cmd[0].Content {
+	cmd := input.Content.([]utils.Resp)
+	switch strings.ToUpper(cmd[0].Content.(string)) {
 	case "PING":
 		return utils.EncodeResp("PONG", utils.SIMPLE_STRING)
-		return []byte("+PONG\r\n"), nil
 	case "ECHO":
 		return utils.EncodeResp(cmd[1].Content.(string), utils.STRING)
+	case "GET":
+		return handleCommandGet(cmd[1:])
+	case "SET":
+		return handleCommandSet(cmd[1:])
 	default:
 		return nil, nil
 	}
+}
+
+func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
+	if len(cmd) < 2 {
+		return nil, errors.New("error SET, was expecting more arguments")
+	}
+
+	cache.RWMutex.Lock()
+	defer cache.RWMutex.Unlock()
+
+	cache.stored[cmd[0].Content.(string)] = cmd[1].Content.(string)
+
+	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
+}
+
+func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
+	if len(cmd) < 1 {
+		return nil, errors.New("error GET, was expecting more arguments")
+	}
+
+	cache.RWMutex.RLock()
+	defer cache.RWMutex.RUnlock()
+
+	stored, ok := cache.stored[cmd[0].Content.(string)]
+
+	if !ok {
+		return NULL_RESP, nil
+	}
+
+	return utils.EncodeResp(stored, utils.STRING)
 }
