@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+
+	"github.com/codecrafters-io/redis-starter-go/internal/utils"
 )
 
 func main() {
@@ -30,18 +34,48 @@ func main() {
 func handleClientConn(conn net.Conn) {
 	defer conn.Close()
 
-	fmt.Printf("new connection from %s\n", conn.LocalAddr().String())
+	fmt.Printf("new connection from %s\n", conn.RemoteAddr().String())
 
 	buffer := make([]byte, 1028)
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Println("Client connection closed")
+				return
+			}
 			fmt.Println("Error reading connection: ", err.Error())
 			return
 		}
 
-		fmt.Printf("Received %d bytes %s\n", n, buffer[:n])
+		parsed, _, err := utils.ParseResp(buffer[:n])
+		if err != nil {
+			// TOOD write error
+			fmt.Printf("Error parsing input from client %s\n", err)
+			return
+		}
 
-		conn.Write([]byte("+PONG\r\n"))
+		out, err := handleCommand(&parsed)
+		if err != nil {
+			fmt.Println("Error handling command", err)
+		}
+		conn.Write(out)
+	}
+}
+
+func handleCommand(resp *utils.Resp) ([]byte, error) {
+	if resp.DataType != utils.ARRAY {
+		return nil, errors.New("invalid client input, was expecting array")
+	}
+
+	cmd := resp.Content.([]utils.Resp)
+	switch cmd[0].Content {
+	case "PING":
+		return utils.EncodeResp("PONG", utils.SIMPLE_STRING)
+		return []byte("+PONG\r\n"), nil
+	case "ECHO":
+		return utils.EncodeResp(cmd[1].Content.(string), utils.STRING)
+	default:
+		return nil, nil
 	}
 }
