@@ -6,15 +6,22 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/utils"
 )
 
+type cacheEntry struct {
+	value string
+	exp   time.Time
+}
+
 type safeCache struct {
 	sync.RWMutex
-	stored map[string]string
+	stored map[string]cacheEntry
 }
 
 var (
@@ -31,7 +38,7 @@ func main() {
 	defer listener.Close()
 
 	cache = safeCache{
-		stored: make(map[string]string),
+		stored: make(map[string]cacheEntry),
 	}
 
 	fmt.Println("started redis server on port 6379")
@@ -104,10 +111,20 @@ func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
 		return nil, errors.New("error SET, was expecting more arguments")
 	}
 
+	var exp time.Time
+	if len(cmd) >= 4 && cmd[3].DataType == utils.STRING {
+		content, err := strconv.Atoi(cmd[3].Content.(string))
+		if err == nil {
+			exp = time.Now().Add(time.Millisecond * time.Duration(content))
+		}
+	}
 	cache.RWMutex.Lock()
 	defer cache.RWMutex.Unlock()
 
-	cache.stored[cmd[0].Content.(string)] = cmd[1].Content.(string)
+	cache.stored[cmd[0].Content.(string)] = cacheEntry{
+		value: cmd[1].Content.(string),
+		exp:   exp,
+	}
 
 	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
 }
@@ -120,11 +137,17 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 	cache.RWMutex.RLock()
 	defer cache.RWMutex.RUnlock()
 
-	stored, ok := cache.stored[cmd[0].Content.(string)]
+	key := cmd[0].Content.(string)
+	stored, ok := cache.stored[key]
 
 	if !ok {
 		return NULL_RESP, nil
 	}
 
-	return utils.EncodeResp(stored, utils.STRING)
+	if !stored.exp.IsZero() && time.Now().After(stored.exp) {
+		delete(cache.stored, key)
+		return NULL_RESP, nil
+	}
+
+	return utils.EncodeResp(stored.value, utils.STRING)
 }
