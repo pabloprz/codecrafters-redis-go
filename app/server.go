@@ -126,6 +126,8 @@ func handleCommand(input *utils.Resp) ([]byte, error) {
 		return handleCommandConfig(cmd[1:])
 	case "INFO":
 		return handleCommandInfo(cmd[1:])
+	case "REPLCONF":
+		return handleCommandReplConfig(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -189,6 +191,10 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp(resp, utils.STRING)
+}
+
+func handleCommandReplConfig(cmd []utils.Resp) ([]byte, error) {
+	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
