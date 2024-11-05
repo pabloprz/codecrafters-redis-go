@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"os"
 	"strconv"
@@ -22,9 +23,11 @@ const (
 )
 
 type nodeInfo struct {
-	port   string
-	master string
-	role   nodeRole
+	id         string
+	offset     int
+	port       string
+	masterHost string
+	role       nodeRole
 }
 
 type cacheEntry struct {
@@ -45,7 +48,7 @@ var (
 )
 
 func main() {
-	readArgs(os.Args[1:])
+	initializeServer(os.Args[1:])
 
 	listener, err := net.Listen("tcp", "0.0.0.0:"+node.port)
 	if err != nil {
@@ -178,7 +181,15 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 		return NULL_RESP, nil
 	}
 
-	return utils.EncodeResp(fmt.Sprintf("role:%s", node.role), utils.STRING)
+	resp := fmt.Sprintf("role:%s\n", node.role)
+
+	if node.role == MASTER {
+		resp = fmt.Sprintf("%smaster_replid:%s\nmaster_repl_offset:%d\n", resp, node.id, node.offset)
+	}
+
+	fmt.Println(resp)
+
+	return utils.EncodeResp(resp, utils.STRING)
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
@@ -194,7 +205,7 @@ func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
 	return utils.EncodeResp([]utils.Resp{cmd[1], {Content: entry, DataType: utils.STRING}}, utils.ARRAY)
 }
 
-func readArgs(args []string) {
+func initializeServer(args []string) {
 	config = map[string]string{}
 	node = nodeInfo{}
 	for i := 0; i+1 < len(args); i += 2 {
@@ -202,7 +213,7 @@ func readArgs(args []string) {
 		case "port":
 			node.port = args[i+1]
 		case "replicaof":
-			node.master = args[i+1]
+			node.masterHost = args[i+1]
 		default:
 			config[args[i][2:]] = args[i+1]
 		}
@@ -212,9 +223,19 @@ func readArgs(args []string) {
 		node.port = "6379"
 	}
 
-	if node.master == "" {
+	if node.masterHost == "" {
 		node.role = MASTER
+		node.id = generateRandomId()
 	} else {
 		node.role = SLAVE
 	}
+}
+
+func generateRandomId() string {
+	runes := []rune("0123456789")
+	b := make([]rune, 40)
+	for i := range 40 {
+		b[i] = runes[rand.IntN(len(runes))]
+	}
+	return string(b)
 }
