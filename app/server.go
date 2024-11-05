@@ -265,6 +265,14 @@ func connectToMaster() {
 	})
 	conn.Write(encodedCapa)
 	conn.Read(response)
+
+	encodedSync := encodeCmd([]utils.Resp{
+		{Content: "PSYNC", DataType: utils.STRING},
+		{Content: "?", DataType: utils.STRING},
+		{Content: "-1", DataType: utils.STRING},
+	})
+	conn.Write(encodedSync)
+	conn.Read(response)
 }
 
 func generateRandomId() string {
