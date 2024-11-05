@@ -80,7 +80,7 @@ func handleClientConn(conn net.Conn) {
 
 	fmt.Printf("new connection from %s\n", conn.RemoteAddr().String())
 
-	buffer := make([]byte, 1028)
+	buffer := make([]byte, 1024)
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
@@ -242,14 +242,29 @@ func connectToMaster() {
 	node.masterConn = conn
 	defer conn.Close()
 
-	pingCmd := []utils.Resp{{Content: "PING", DataType: utils.STRING}}
-	encodedPing, err := utils.EncodeResp(pingCmd, utils.ARRAY)
-	if err != nil {
-		fmt.Println("error encoding ping, ", err)
-		os.Exit(1)
-	}
-
+	// Step 1 PING
+	encodedPing := encodeCmd([]utils.Resp{{Content: "PING", DataType: utils.STRING}})
 	conn.Write(encodedPing)
+
+	response := make([]byte, 1024)
+	conn.Read(response)
+
+	// Step 2 REPLCONF
+	encodedPort := encodeCmd([]utils.Resp{
+		{Content: "REPLCONF", DataType: utils.STRING},
+		{Content: "listening-port", DataType: utils.STRING},
+		{Content: node.port, DataType: utils.STRING},
+	})
+	conn.Write(encodedPort)
+	conn.Read(response)
+
+	encodedCapa := encodeCmd([]utils.Resp{
+		{Content: "REPLCONF", DataType: utils.STRING},
+		{Content: "capa", DataType: utils.STRING},
+		{Content: "psync2", DataType: utils.STRING},
+	})
+	conn.Write(encodedCapa)
+	conn.Read(response)
 }
 
 func generateRandomId() string {
@@ -259,4 +274,13 @@ func generateRandomId() string {
 		b[i] = runes[rand.IntN(len(runes))]
 	}
 	return string(b)
+}
+
+func encodeCmd(cmd []utils.Resp) []byte {
+	encodedPing, err := utils.EncodeResp(cmd, utils.ARRAY)
+	if err != nil {
+		fmt.Println("error encoding ping, ", err)
+		os.Exit(1)
+	}
+	return encodedPing
 }
