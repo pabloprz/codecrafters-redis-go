@@ -31,20 +31,24 @@ var (
 )
 
 func main() {
-	listener, err := net.Listen("tcp", "0.0.0.0:6379")
+	readArgs(os.Args[1:])
+	port, ok := config["port"]
+	if !ok {
+		port = "6379"
+	}
+
+	listener, err := net.Listen("tcp", "0.0.0.0:"+port)
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Printf("failed to bind to port %s\n", port)
 		os.Exit(1)
 	}
 	defer listener.Close()
-
-	readArgs(os.Args[1:])
 
 	cache = safeCache{
 		stored: make(map[string]cacheEntry),
 	}
 
-	fmt.Println("started redis server on port 6379")
+	fmt.Printf("started redis server on port %s\n", port)
 
 	for {
 		conn, err := listener.Accept()
