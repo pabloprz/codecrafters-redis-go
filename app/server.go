@@ -14,6 +14,19 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/internal/utils"
 )
 
+type nodeRole string
+
+const (
+	MASTER nodeRole = "master"
+	SLAVE  nodeRole = "slave"
+)
+
+type nodeInfo struct {
+	port   string
+	master string
+	role   nodeRole
+}
+
 type cacheEntry struct {
 	value string
 	exp   time.Time
@@ -25,6 +38,7 @@ type safeCache struct {
 }
 
 var (
+	node      nodeInfo
 	cache     safeCache
 	config    map[string]string
 	NULL_RESP = []byte("$-1\r\n")
@@ -32,14 +46,10 @@ var (
 
 func main() {
 	readArgs(os.Args[1:])
-	port, ok := config["port"]
-	if !ok {
-		port = "6379"
-	}
 
-	listener, err := net.Listen("tcp", "0.0.0.0:"+port)
+	listener, err := net.Listen("tcp", "0.0.0.0:"+node.port)
 	if err != nil {
-		fmt.Printf("failed to bind to port %s\n", port)
+		fmt.Printf("failed to bind to port %s\n", node.port)
 		os.Exit(1)
 	}
 	defer listener.Close()
@@ -48,7 +58,7 @@ func main() {
 		stored: make(map[string]cacheEntry),
 	}
 
-	fmt.Printf("started redis server on port %s\n", port)
+	fmt.Printf("started redis server on port %s\n", node.port)
 
 	for {
 		conn, err := listener.Accept()
@@ -168,7 +178,7 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 		return NULL_RESP, nil
 	}
 
-	return utils.EncodeResp("role:master", utils.STRING)
+	return utils.EncodeResp(fmt.Sprintf("role:%s", node.role), utils.STRING)
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
@@ -186,7 +196,25 @@ func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
 
 func readArgs(args []string) {
 	config = map[string]string{}
+	node = nodeInfo{}
 	for i := 0; i+1 < len(args); i += 2 {
-		config[args[i][2:]] = args[i+1]
+		switch flag := args[i][2:]; flag {
+		case "port":
+			node.port = args[i+1]
+		case "replicaof":
+			node.master = args[i+1]
+		default:
+			config[args[i][2:]] = args[i+1]
+		}
+	}
+
+	if node.port == "" {
+		node.port = "6379"
+	}
+
+	if node.master == "" {
+		node.role = MASTER
+	} else {
+		node.role = SLAVE
 	}
 }
