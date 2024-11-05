@@ -110,6 +110,8 @@ func handleCommand(input *utils.Resp) ([]byte, error) {
 		return handleCommandSet(cmd[1:])
 	case "CONFIG":
 		return handleCommandConfig(cmd[1:])
+	case "INFO":
+		return handleCommandInfo(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -159,6 +161,14 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp(stored.value, utils.STRING)
+}
+
+func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
+	if len(cmd) == 0 || cmd[0].Content != "replication" {
+		return NULL_RESP, nil
+	}
+
+	return utils.EncodeResp("role:master", utils.STRING)
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
