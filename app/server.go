@@ -26,8 +26,9 @@ type nodeInfo struct {
 	id         string
 	offset     int
 	port       string
-	masterHost string
 	role       nodeRole
+	masterHost string
+	masterConn net.Conn
 }
 
 type cacheEntry struct {
@@ -187,8 +188,6 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 		resp = fmt.Sprintf("%smaster_replid:%s\nmaster_repl_offset:%d\n", resp, node.id, node.offset)
 	}
 
-	fmt.Println(resp)
-
 	return utils.EncodeResp(resp, utils.STRING)
 }
 
@@ -213,7 +212,8 @@ func initializeServer(args []string) {
 		case "port":
 			node.port = args[i+1]
 		case "replicaof":
-			node.masterHost = args[i+1]
+			host := strings.SplitN(args[i+1], " ", 2)
+			node.masterHost = strings.Join(host, ":")
 		default:
 			config[args[i][2:]] = args[i+1]
 		}
@@ -228,7 +228,28 @@ func initializeServer(args []string) {
 		node.id = generateRandomId()
 	} else {
 		node.role = SLAVE
+		connectToMaster()
 	}
+}
+
+func connectToMaster() {
+	conn, err := net.Dial("tcp", node.masterHost)
+	if err != nil {
+		fmt.Println("error connecting to master node, ", err)
+		os.Exit(1)
+	}
+
+	node.masterConn = conn
+	defer conn.Close()
+
+	pingCmd := []utils.Resp{{Content: "PING", DataType: utils.STRING}}
+	encodedPing, err := utils.EncodeResp(pingCmd, utils.ARRAY)
+	if err != nil {
+		fmt.Println("error encoding ping, ", err)
+		os.Exit(1)
+	}
+
+	conn.Write(encodedPing)
 }
 
 func generateRandomId() string {
