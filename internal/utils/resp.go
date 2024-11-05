@@ -14,6 +14,8 @@ const (
 	ARRAY         = '*'
 )
 
+var CLRF = []byte{'\r', '\n'}
+
 type RespType byte
 
 type Resp struct {
@@ -103,6 +105,8 @@ func EncodeResp(val any, valType RespType) ([]byte, error) {
 		return encodeSimpleString(val.(string))
 	case STRING:
 		return encodeString(val.(string))
+	case ARRAY:
+		return encodeArray(val.([]Resp))
 	default:
 		return nil, nil
 	}
@@ -112,15 +116,31 @@ func encodeString(val string) ([]byte, error) {
 	var res bytes.Buffer
 	res.WriteByte(STRING)
 	res.WriteString(strconv.Itoa(len(val)))
-	res.WriteByte('\r')
-	res.WriteByte('\n')
+	res.Write(CLRF)
 	res.WriteString(val)
-	res.WriteByte('\r')
-	res.WriteByte('\n')
+	res.Write(CLRF)
 
 	return res.Bytes(), nil
 }
 
 func encodeSimpleString(val string) ([]byte, error) {
 	return []byte(string(SIMPLE_STRING) + val + "\r\n"), nil
+}
+
+func encodeArray(val []Resp) ([]byte, error) {
+	var res bytes.Buffer
+	res.WriteByte(ARRAY)
+	res.WriteString(strconv.Itoa(len(val)))
+	res.Write(CLRF)
+
+	for _, element := range val {
+		encoded, err := EncodeResp(element.Content, element.DataType)
+		if err != nil {
+			return nil, err
+		}
+
+		res.Write(encoded)
+	}
+
+	return res.Bytes(), nil
 }

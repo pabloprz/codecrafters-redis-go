@@ -26,6 +26,7 @@ type safeCache struct {
 
 var (
 	cache     safeCache
+	config    map[string]string
 	NULL_RESP = []byte("$-1\r\n")
 )
 
@@ -36,6 +37,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer listener.Close()
+
+	readArgs(os.Args[1:])
 
 	cache = safeCache{
 		stored: make(map[string]cacheEntry),
@@ -101,6 +104,8 @@ func handleCommand(input *utils.Resp) ([]byte, error) {
 		return handleCommandGet(cmd[1:])
 	case "SET":
 		return handleCommandSet(cmd[1:])
+	case "CONFIG":
+		return handleCommandConfig(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -150,4 +155,24 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp(stored.value, utils.STRING)
+}
+
+func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
+	if len(cmd) < 2 || cmd[0].Content != "GET" {
+		return NULL_RESP, nil
+	}
+
+	entry, ok := config[cmd[1].Content.(string)]
+	if !ok {
+		return NULL_RESP, nil
+	}
+
+	return utils.EncodeResp([]utils.Resp{cmd[1], {Content: entry, DataType: utils.STRING}}, utils.ARRAY)
+}
+
+func readArgs(args []string) {
+	config = map[string]string{}
+	for i := 0; i+1 < len(args); i += 2 {
+		config[args[i][2:]] = args[i+1]
+	}
 }
