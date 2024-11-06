@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strconv"
 	"unicode"
 )
@@ -143,4 +144,8 @@ func encodeArray(val []Resp) ([]byte, error) {
 	}
 
 	return res.Bytes(), nil
+}
+
+func EncodeRdb(content []byte) []byte {
+	return []byte(fmt.Sprintf("$%d\r\n%s", len(content), content))
 }

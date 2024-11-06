@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,8 +19,9 @@ import (
 type nodeRole string
 
 const (
-	MASTER nodeRole = "master"
-	SLAVE  nodeRole = "slave"
+	MASTER    nodeRole = "master"
+	SLAVE     nodeRole = "slave"
+	EMPTY_RDB          = `524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2`
 )
 
 type nodeInfo struct {
@@ -99,7 +101,7 @@ func handleClientConn(conn net.Conn) {
 			return
 		}
 
-		out, err := handleCommand(&parsed)
+		out, err := handleCommand(&parsed, conn)
 		if err != nil {
 			fmt.Println("Error handling command", err)
 		}
@@ -107,7 +109,7 @@ func handleClientConn(conn net.Conn) {
 	}
 }
 
-func handleCommand(input *utils.Resp) ([]byte, error) {
+func handleCommand(input *utils.Resp, conn net.Conn) ([]byte, error) {
 	if input.DataType != utils.ARRAY {
 		return nil, errors.New("invalid client input, was expecting array")
 	}
@@ -129,7 +131,7 @@ func handleCommand(input *utils.Resp) ([]byte, error) {
 	case "REPLCONF":
 		return handleCommandReplConfig(cmd[1:])
 	case "PSYNC":
-		return handleCommandSync(cmd[1:])
+		return handleCommandSync(cmd[1:], conn)
 	default:
 		return nil, nil
 	}
@@ -199,8 +201,25 @@ func handleCommandReplConfig(cmd []utils.Resp) ([]byte, error) {
 	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
 }
 
-func handleCommandSync(cmd []utils.Resp) ([]byte, error) {
-	return utils.EncodeResp(fmt.Sprintf("FULLRESYNC %s %d", node.id, node.offset), utils.SIMPLE_STRING)
+func handleCommandSync(cmd []utils.Resp, conn net.Conn) ([]byte, error) {
+	resync, err := utils.EncodeResp(
+		fmt.Sprintf("FULLRESYNC %s %d", node.id, node.offset),
+		utils.SIMPLE_STRING,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = conn.Write(resync)
+	if err != nil {
+		return nil, err
+	}
+
+	decoded, err := hex.DecodeString(EMPTY_RDB)
+	if err != nil {
+		return nil, err
+	}
+	return utils.EncodeRdb(decoded), nil
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
