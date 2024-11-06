@@ -128,6 +128,8 @@ func handleCommand(input *utils.Resp) ([]byte, error) {
 		return handleCommandInfo(cmd[1:])
 	case "REPLCONF":
 		return handleCommandReplConfig(cmd[1:])
+	case "PSYNC":
+		return handleCommandSync(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -195,6 +197,10 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 
 func handleCommandReplConfig(cmd []utils.Resp) ([]byte, error) {
 	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
+}
+
+func handleCommandSync(cmd []utils.Resp) ([]byte, error) {
+	return utils.EncodeResp(fmt.Sprintf("FULLRESYNC %s %d", node.id, node.offset), utils.SIMPLE_STRING)
 }
 
 func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
