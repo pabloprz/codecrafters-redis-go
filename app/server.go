@@ -31,6 +31,7 @@ type nodeInfo struct {
 	role       nodeRole
 	masterHost string
 	masterConn net.Conn
+	replicas   []net.Conn
 }
 
 type cacheEntry struct {
@@ -157,6 +158,19 @@ func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
 		exp:   exp,
 	}
 
+	if node.role == MASTER {
+		bcast, err := utils.EncodeResp(
+			append([]utils.Resp{{
+				Content: "SET", DataType: utils.STRING,
+			}}, cmd...), utils.ARRAY)
+		if err != nil {
+			return nil, err
+		}
+		for _, replica := range node.replicas {
+			replica.Write(bcast)
+		}
+	}
+
 	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
 }
 
@@ -219,6 +233,8 @@ func handleCommandSync(cmd []utils.Resp, conn net.Conn) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	node.replicas = append(node.replicas, conn)
 	return utils.EncodeRdb(decoded), nil
 }
 
@@ -303,6 +319,7 @@ func connectToMaster() {
 		{Content: "-1", DataType: utils.STRING},
 	})
 	conn.Write(encodedSync)
+	conn.Read(response)
 	conn.Read(response)
 }
 
