@@ -67,6 +67,10 @@ func main() {
 
 	fmt.Printf("started redis server on port %s\n", node.port)
 
+	if node.role == SLAVE {
+		connectToMaster()
+	}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -76,6 +80,79 @@ func main() {
 
 		go handleClientConn(conn, false)
 	}
+}
+
+func initializeServer(args []string) {
+	config = map[string]string{}
+	node = nodeInfo{}
+	for i := 0; i+1 < len(args); i += 2 {
+		switch flag := args[i][2:]; flag {
+		case "port":
+			node.port = args[i+1]
+		case "replicaof":
+			host := strings.SplitN(args[i+1], " ", 2)
+			node.masterHost = strings.Join(host, ":")
+		default:
+			config[args[i][2:]] = args[i+1]
+		}
+	}
+
+	if node.port == "" {
+		node.port = "6379"
+	}
+
+	if node.masterHost == "" {
+		node.role = MASTER
+		node.id = generateRandomId()
+	} else {
+		node.role = SLAVE
+	}
+}
+
+func connectToMaster() {
+	conn, err := net.Dial("tcp", node.masterHost)
+	if err != nil {
+		fmt.Println("error connecting to master node, ", err)
+		os.Exit(1)
+	}
+
+	node.masterConn = conn
+
+	// Step 1 PING
+	encodedPing := encodeCmd([]utils.Resp{{Content: "PING", DataType: utils.STRING}})
+	conn.Write(encodedPing)
+
+	response := make([]byte, 1024)
+	conn.Read(response)
+
+	// Step 2 REPLCONF
+	encodedPort := encodeCmd([]utils.Resp{
+		{Content: "REPLCONF", DataType: utils.STRING},
+		{Content: "listening-port", DataType: utils.STRING},
+		{Content: node.port, DataType: utils.STRING},
+	})
+	conn.Write(encodedPort)
+	conn.Read(response)
+
+	encodedCapa := encodeCmd([]utils.Resp{
+		{Content: "REPLCONF", DataType: utils.STRING},
+		{Content: "capa", DataType: utils.STRING},
+		{Content: "psync2", DataType: utils.STRING},
+	})
+	conn.Write(encodedCapa)
+	conn.Read(response)
+
+	encodedSync := encodeCmd([]utils.Resp{
+		{Content: "PSYNC", DataType: utils.STRING},
+		{Content: "?", DataType: utils.STRING},
+		{Content: "-1", DataType: utils.STRING},
+	})
+	conn.Write(encodedSync)
+	conn.Read(response)
+	conn.Read(response)
+	fmt.Println("connection to master complete")
+
+	go handleClientConn(conn, true)
 }
 
 func handleClientConn(conn net.Conn, fromMaster bool) {
@@ -95,19 +172,27 @@ func handleClientConn(conn net.Conn, fromMaster bool) {
 			return
 		}
 
-		parsed, _, err := utils.ParseResp(buffer[:n])
-		if err != nil {
-			// TOOD write error
-			fmt.Printf("Error parsing input from client %s\n", err)
-			return
-		}
+		fmt.Printf("%#v\n", string(buffer[:n]))
+		fmt.Println("total", n)
+		for nParsed := 0; nParsed < n; {
+			parsed, offset, err := utils.ParseResp(buffer[nParsed:n])
+			fmt.Println("offset: ", offset)
+			if err != nil {
+				// TOOD write error
+				fmt.Printf("Error parsing input from client %s\n", err)
+				return
+			}
 
-		out, err := handleCommand(&parsed, conn)
-		if err != nil {
-			fmt.Println("Error handling command", err)
-		}
-		if !fromMaster {
-			conn.Write(out)
+			fmt.Println(parsed)
+
+			out, err := handleCommand(&parsed, conn)
+			if err != nil {
+				fmt.Println("Error handling command", err)
+			}
+			if !fromMaster {
+				conn.Write(out)
+			}
+			nParsed += offset - 1
 		}
 	}
 }
@@ -251,79 +336,6 @@ func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp([]utils.Resp{cmd[1], {Content: entry, DataType: utils.STRING}}, utils.ARRAY)
-}
-
-func initializeServer(args []string) {
-	config = map[string]string{}
-	node = nodeInfo{}
-	for i := 0; i+1 < len(args); i += 2 {
-		switch flag := args[i][2:]; flag {
-		case "port":
-			node.port = args[i+1]
-		case "replicaof":
-			host := strings.SplitN(args[i+1], " ", 2)
-			node.masterHost = strings.Join(host, ":")
-		default:
-			config[args[i][2:]] = args[i+1]
-		}
-	}
-
-	if node.port == "" {
-		node.port = "6379"
-	}
-
-	if node.masterHost == "" {
-		node.role = MASTER
-		node.id = generateRandomId()
-	} else {
-		node.role = SLAVE
-		connectToMaster()
-	}
-}
-
-func connectToMaster() {
-	conn, err := net.Dial("tcp", node.masterHost)
-	if err != nil {
-		fmt.Println("error connecting to master node, ", err)
-		os.Exit(1)
-	}
-
-	node.masterConn = conn
-
-	// Step 1 PING
-	encodedPing := encodeCmd([]utils.Resp{{Content: "PING", DataType: utils.STRING}})
-	conn.Write(encodedPing)
-
-	response := make([]byte, 1024)
-	conn.Read(response)
-
-	// Step 2 REPLCONF
-	encodedPort := encodeCmd([]utils.Resp{
-		{Content: "REPLCONF", DataType: utils.STRING},
-		{Content: "listening-port", DataType: utils.STRING},
-		{Content: node.port, DataType: utils.STRING},
-	})
-	conn.Write(encodedPort)
-	conn.Read(response)
-
-	encodedCapa := encodeCmd([]utils.Resp{
-		{Content: "REPLCONF", DataType: utils.STRING},
-		{Content: "capa", DataType: utils.STRING},
-		{Content: "psync2", DataType: utils.STRING},
-	})
-	conn.Write(encodedCapa)
-	conn.Read(response)
-
-	encodedSync := encodeCmd([]utils.Resp{
-		{Content: "PSYNC", DataType: utils.STRING},
-		{Content: "?", DataType: utils.STRING},
-		{Content: "-1", DataType: utils.STRING},
-	})
-	conn.Write(encodedSync)
-	conn.Read(response)
-	conn.Read(response)
-
-	go handleClientConn(conn, true)
 }
 
 func generateRandomId() string {
