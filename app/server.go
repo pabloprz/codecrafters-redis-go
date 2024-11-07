@@ -68,7 +68,7 @@ func main() {
 	fmt.Printf("started redis server on port %s\n", node.port)
 
 	if node.role == SLAVE {
-		connectToMaster()
+		go connectToMaster()
 	}
 
 	for {
@@ -152,7 +152,7 @@ func connectToMaster() {
 	conn.Read(response)
 	fmt.Println("connection to master complete")
 
-	go handleClientConn(conn, true)
+	handleClientConn(conn, true)
 }
 
 func handleClientConn(conn net.Conn, fromMaster bool) {
@@ -194,6 +194,7 @@ func handleClientConn(conn net.Conn, fromMaster bool) {
 			}
 			nParsed += offset - 1
 		}
+		fmt.Println("finished processing command")
 	}
 }
 
