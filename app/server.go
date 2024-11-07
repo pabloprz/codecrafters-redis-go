@@ -74,11 +74,11 @@ func main() {
 			os.Exit(1)
 		}
 
-		go handleClientConn(conn)
+		go handleClientConn(conn, false)
 	}
 }
 
-func handleClientConn(conn net.Conn) {
+func handleClientConn(conn net.Conn, fromMaster bool) {
 	defer conn.Close()
 
 	fmt.Printf("new connection from %s\n", conn.RemoteAddr().String())
@@ -88,7 +88,7 @@ func handleClientConn(conn net.Conn) {
 		n, err := conn.Read(buffer)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				fmt.Println("Client connection closed")
+				fmt.Println("Client connection closed", conn.RemoteAddr())
 				return
 			}
 			fmt.Println("Error reading connection: ", err.Error())
@@ -106,7 +106,9 @@ func handleClientConn(conn net.Conn) {
 		if err != nil {
 			fmt.Println("Error handling command", err)
 		}
-		conn.Write(out)
+		if !fromMaster {
+			conn.Write(out)
+		}
 	}
 }
 
@@ -287,7 +289,6 @@ func connectToMaster() {
 	}
 
 	node.masterConn = conn
-	defer conn.Close()
 
 	// Step 1 PING
 	encodedPing := encodeCmd([]utils.Resp{{Content: "PING", DataType: utils.STRING}})
@@ -321,6 +322,8 @@ func connectToMaster() {
 	conn.Write(encodedSync)
 	conn.Read(response)
 	conn.Read(response)
+
+	go handleClientConn(conn, true)
 }
 
 func generateRandomId() string {
