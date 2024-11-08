@@ -148,10 +148,6 @@ func connectToMaster() {
 		{Content: "-1", DataType: utils.STRING},
 	})
 	conn.Write(encodedSync)
-	conn.Read(response)
-	conn.Read(response)
-	fmt.Println("connection to master complete")
-
 	handleClientConn(conn, true)
 }
 
@@ -172,29 +168,25 @@ func handleClientConn(conn net.Conn, fromMaster bool) {
 			return
 		}
 
-		fmt.Printf("%#v\n", string(buffer[:n]))
-		fmt.Println("total", n)
 		for nParsed := 0; nParsed < n; {
 			parsed, offset, err := utils.ParseResp(buffer[nParsed:n])
-			fmt.Println("offset: ", offset)
+			nParsed += offset - 1
 			if err != nil {
 				// TOOD write error
 				fmt.Printf("Error parsing input from client %s\n", err)
-				return
+				break
 			}
-
-			fmt.Println(parsed)
 
 			out, err := handleCommand(&parsed, conn)
 			if err != nil {
 				fmt.Println("Error handling command", err)
+				continue
 			}
+
 			if !fromMaster {
 				conn.Write(out)
 			}
-			nParsed += offset - 1
 		}
-		fmt.Println("finished processing command")
 	}
 }
 

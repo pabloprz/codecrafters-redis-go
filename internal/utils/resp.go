@@ -44,8 +44,14 @@ func ParseResp(buf []byte) (Resp, int, error) {
 	}
 }
 
+// +<data>\r\n
 func parseSimpleString(buf []byte) (Resp, int, error) {
-	return Resp{}, 0, nil
+	i := 0
+	for ; i+1 < len(buf) && buf[i] != '\r' && buf[i+1] != '\n'; i++ {
+		// iterate until a \r\n is found
+	}
+	i++
+	return Resp{Content: string(buf[:i-2]), DataType: SIMPLE_STRING}, i + 3, nil
 }
 
 // <length>\r\n<data>\r\n
@@ -58,7 +64,7 @@ func parseString(buf []byte) (Resp, int, error) {
 	}
 
 	i += 2
-	if i+length >= len(buf) || buf[i-2] != '\r' || buf[i-1] != '\n' {
+	if i+length > len(buf) || buf[i-2] != '\r' || buf[i-1] != '\n' {
 		return resp, 0, errors.New("error parsing string. Invalid format")
 	}
 
