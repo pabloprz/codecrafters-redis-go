@@ -186,6 +186,10 @@ func handleClientConn(conn net.Conn, fromMaster bool) {
 			if !fromMaster || replicaMustRespond(&parsed) {
 				conn.Write(out)
 			}
+
+			if node.role == SLAVE {
+				node.offset += offset - 1
+			}
 		}
 	}
 }
