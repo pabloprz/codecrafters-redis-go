@@ -293,7 +293,7 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 }
 
 func handleCommandWait(cmd []utils.Resp) ([]byte, error) {
-	return utils.EncodeResp(0, utils.INTEGER)
+	return utils.EncodeResp(len(node.replicas), utils.INTEGER)
 }
 
 func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {

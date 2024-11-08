@@ -114,6 +114,8 @@ func EncodeResp(val any, valType RespType) ([]byte, error) {
 		return encodeString(val.(string))
 	case ARRAY:
 		return encodeArray(val.([]Resp))
+	case INTEGER:
+		return encodeInt(val.(int))
 	default:
 		return nil, nil
 	}
@@ -150,6 +152,10 @@ func encodeArray(val []Resp) ([]byte, error) {
 	}
 
 	return res.Bytes(), nil
+}
+
+func encodeInt(val int) ([]byte, error) {
+	return []byte(fmt.Sprintf(":%s\r\n", strconv.Itoa(val))), nil
 }
 
 func EncodeRdb(content []byte) []byte {
