@@ -183,11 +183,20 @@ func handleClientConn(conn net.Conn, fromMaster bool) {
 				continue
 			}
 
-			if !fromMaster {
+			if !fromMaster || replicaMustRespond(&parsed) {
 				conn.Write(out)
 			}
 		}
 	}
+}
+
+func replicaMustRespond(input *utils.Resp) bool {
+	if input.DataType != utils.ARRAY {
+		return false
+	}
+
+	cmd := input.Content.([]utils.Resp)
+	return cmd[0].Content == "REPLCONF" && cmd[1].Content == "GETACK"
 }
 
 func handleCommand(input *utils.Resp, conn net.Conn) ([]byte, error) {
@@ -292,7 +301,20 @@ func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
 }
 
 func handleCommandReplConfig(cmd []utils.Resp) ([]byte, error) {
-	return utils.EncodeResp("OK", utils.SIMPLE_STRING)
+	subCmd := strings.ToLower(cmd[0].Content.(string))
+	if subCmd == "listening-port" || subCmd == "capa" {
+		return utils.EncodeResp("OK", utils.SIMPLE_STRING)
+	}
+
+	if subCmd == "getack" {
+		return utils.EncodeResp([]utils.Resp{
+			{Content: "REPLCONF", DataType: utils.STRING},
+			{Content: "ACK", DataType: utils.STRING},
+			{Content: strconv.Itoa(node.offset), DataType: utils.STRING},
+		}, utils.ARRAY)
+	}
+
+	return nil, nil
 }
 
 func handleCommandSync(cmd []utils.Resp, conn net.Conn) ([]byte, error) {
