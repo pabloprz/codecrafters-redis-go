@@ -226,6 +226,8 @@ func handleCommand(input *utils.Resp, conn net.Conn) ([]byte, error) {
 		return handleCommandReplConfig(cmd[1:])
 	case "PSYNC":
 		return handleCommandSync(cmd[1:], conn)
+	case "WAIT":
+		return handleCommandWait(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -288,6 +290,10 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp(stored.value, utils.STRING)
+}
+
+func handleCommandWait(cmd []utils.Resp) ([]byte, error) {
+	return utils.EncodeResp(0, utils.INTEGER)
 }
 
 func handleCommandInfo(cmd []utils.Resp) ([]byte, error) {
