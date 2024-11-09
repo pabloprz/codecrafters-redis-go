@@ -88,6 +88,57 @@ func (c *safeCache) deleteKey(key string) {
 	delete(c.stored, key)
 }
 
+type streamId struct {
+	msTime         int
+	sequenceNumber int
+}
+
+func streamIdFromString(id string) streamId {
+	splitted := strings.Split(id, "-")
+	if len(splitted) < 2 {
+		return streamId{0, 0}
+	}
+
+	ms, _ := strconv.Atoi(splitted[0])
+	seq, _ := strconv.Atoi(splitted[1])
+	return streamId{
+		ms,
+		seq,
+	}
+}
+
+func (id streamId) String() string {
+	return fmt.Sprintf("%d-%d", id.msTime, id.sequenceNumber)
+}
+
+type streamEntry struct {
+	id streamId
+}
+
+type Stream struct {
+	entries []streamEntry
+}
+
+func (s Stream) append(input string) error {
+	id := streamIdFromString(input)
+
+	latest := s.top()
+	if latest == nil || latest.id.msTime > id.msTime || (latest.id.msTime == id.msTime && latest.id.sequenceNumber < id.sequenceNumber) {
+		s.entries = append(s.entries, streamEntry{id})
+		return nil
+	}
+
+	return errors.New("invalid entry")
+}
+
+func (s Stream) top() *streamEntry {
+	if len(s.entries) == 0 {
+		return nil
+	}
+
+	return &s.entries[len(s.entries)-1]
+}
+
 var (
 	node      nodeInfo
 	cache     safeCache
@@ -274,9 +325,32 @@ func handleCommand(input *utils.Resp, conn net.Conn) ([]byte, error) {
 		return handleCommandWait(cmd[1:])
 	case "TYPE":
 		return handleCommandType(cmd[1:])
+	case "XADD":
+		return handleCommandStreamAdd(cmd[1:])
 	default:
 		return nil, nil
 	}
+}
+
+func handleCommandStreamAdd(cmd []utils.Resp) ([]byte, error) {
+	if len(cmd) < 2 {
+		return nil, errors.New("error SET, was expecting more arguments")
+	}
+
+	key := cmd[0].Content.(string)
+	id := cmd[1].Content.(string)
+
+	stream, ok := cache.getKey(key)
+	if !ok {
+		stream = cacheEntry{
+			entryType: ENTRY_STREAM,
+			value:     Stream{make([]streamEntry, 0, 1)},
+		}
+		cache.setKey(key, stream, time.Time{}, ENTRY_STREAM)
+	}
+
+	stream.value.(Stream).append(id)
+	return utils.EncodeResp(id, utils.STRING)
 }
 
 func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
