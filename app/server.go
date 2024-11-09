@@ -19,9 +19,11 @@ import (
 type nodeRole string
 
 const (
-	MASTER    nodeRole = "master"
-	SLAVE     nodeRole = "slave"
-	EMPTY_RDB          = `524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2`
+	MASTER       nodeRole = "master"
+	SLAVE        nodeRole = "slave"
+	EMPTY_RDB             = `524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2`
+	ENTRY_STRING          = iota
+	ENTRY_STREAM
 )
 
 type nodeInfo struct {
@@ -34,9 +36,23 @@ type nodeInfo struct {
 	replicas   []net.Conn
 }
 
+type cacheEntryType int
+
+func (t cacheEntryType) String() string {
+	switch t {
+	case ENTRY_STRING:
+		return "string"
+	case ENTRY_STREAM:
+		return "stream"
+	default:
+		return ""
+	}
+}
+
 type cacheEntry struct {
-	value string
-	exp   time.Time
+	value     any
+	exp       time.Time
+	entryType cacheEntryType
 }
 
 type safeCache struct {
@@ -228,6 +244,8 @@ func handleCommand(input *utils.Resp, conn net.Conn) ([]byte, error) {
 		return handleCommandSync(cmd[1:], conn)
 	case "WAIT":
 		return handleCommandWait(cmd[1:])
+	case "TYPE":
+		return handleCommandType(cmd[1:])
 	default:
 		return nil, nil
 	}
@@ -249,8 +267,9 @@ func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
 	defer cache.RWMutex.Unlock()
 
 	cache.stored[cmd[0].Content.(string)] = cacheEntry{
-		value: cmd[1].Content.(string),
-		exp:   exp,
+		value:     cmd[1].Content.(string),
+		exp:       exp,
+		entryType: ENTRY_STRING,
 	}
 
 	if node.role == MASTER {
@@ -361,6 +380,20 @@ func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
 	}
 
 	return utils.EncodeResp([]utils.Resp{cmd[1], {Content: entry, DataType: utils.STRING}}, utils.ARRAY)
+}
+
+func handleCommandType(cmd []utils.Resp) ([]byte, error) {
+	key := cmd[0].Content.(string)
+
+	cache.RWMutex.RLock()
+	defer cache.RWMutex.RUnlock()
+	val, ok := cache.stored[key]
+
+	if !ok {
+		return utils.EncodeResp("none", utils.SIMPLE_STRING)
+	}
+
+	return utils.EncodeResp(val.entryType.String(), utils.STRING)
 }
 
 func generateRandomId() string {
