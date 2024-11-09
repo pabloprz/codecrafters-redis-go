@@ -60,6 +60,34 @@ type safeCache struct {
 	stored map[string]cacheEntry
 }
 
+func (c *safeCache) getKey(key string) (cacheEntry, bool) {
+	c.RWMutex.RLock()
+	defer c.RWMutex.RUnlock()
+
+	entry, ok := c.stored[key]
+	return entry, ok
+}
+
+func (c *safeCache) setKey(key string, val any, exp time.Time, entryType cacheEntryType) {
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
+
+	entry := cacheEntry{
+		value:     val,
+		exp:       exp,
+		entryType: entryType,
+	}
+
+	c.stored[key] = entry
+}
+
+func (c *safeCache) deleteKey(key string) {
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
+
+	delete(c.stored, key)
+}
+
 var (
 	node      nodeInfo
 	cache     safeCache
@@ -263,14 +291,7 @@ func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
 			exp = time.Now().Add(time.Millisecond * time.Duration(content))
 		}
 	}
-	cache.RWMutex.Lock()
-	defer cache.RWMutex.Unlock()
-
-	cache.stored[cmd[0].Content.(string)] = cacheEntry{
-		value:     cmd[1].Content.(string),
-		exp:       exp,
-		entryType: ENTRY_STRING,
-	}
+	cache.setKey(cmd[0].Content.(string), cmd[1].Content.(string), exp, ENTRY_STRING)
 
 	if node.role == MASTER {
 		bcast, err := utils.EncodeResp(
@@ -293,18 +314,15 @@ func handleCommandGet(cmd []utils.Resp) ([]byte, error) {
 		return nil, errors.New("error GET, was expecting more arguments")
 	}
 
-	cache.RWMutex.RLock()
-	defer cache.RWMutex.RUnlock()
-
 	key := cmd[0].Content.(string)
-	stored, ok := cache.stored[key]
+	stored, ok := cache.getKey(key)
 
 	if !ok {
 		return NULL_RESP, nil
 	}
 
 	if !stored.exp.IsZero() && time.Now().After(stored.exp) {
-		delete(cache.stored, key)
+		cache.deleteKey(key)
 		return NULL_RESP, nil
 	}
 
@@ -385,9 +403,7 @@ func handleCommandConfig(cmd []utils.Resp) ([]byte, error) {
 func handleCommandType(cmd []utils.Resp) ([]byte, error) {
 	key := cmd[0].Content.(string)
 
-	cache.RWMutex.RLock()
-	defer cache.RWMutex.RUnlock()
-	val, ok := cache.stored[key]
+	val, ok := cache.getKey(key)
 
 	if !ok {
 		return utils.EncodeResp("none", utils.SIMPLE_STRING)
