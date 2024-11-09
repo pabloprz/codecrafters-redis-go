@@ -68,7 +68,7 @@ func (c *safeCache) getKey(key string) (cacheEntry, bool) {
 	return entry, ok
 }
 
-func (c *safeCache) setKey(key string, val any, exp time.Time, entryType cacheEntryType) {
+func (c *safeCache) setKey(key string, val any, exp time.Time, entryType cacheEntryType) cacheEntry {
 	c.RWMutex.Lock()
 	defer c.RWMutex.Unlock()
 
@@ -79,6 +79,7 @@ func (c *safeCache) setKey(key string, val any, exp time.Time, entryType cacheEn
 	}
 
 	c.stored[key] = entry
+	return entry
 }
 
 func (c *safeCache) deleteKey(key string) {
@@ -119,19 +120,24 @@ type Stream struct {
 	entries []streamEntry
 }
 
-func (s Stream) append(input string) error {
+func (s *Stream) append(input string) error {
 	id := streamIdFromString(input)
+	if id.msTime < 0 || id.sequenceNumber < 0 || (id.msTime == 0 && id.sequenceNumber == 0) {
+		return errors.New("ERR The ID specified in XADD must be greater than 0-0")
+	}
 
+	fmt.Println(s.entries)
 	latest := s.top()
-	if latest == nil || latest.id.msTime > id.msTime || (latest.id.msTime == id.msTime && latest.id.sequenceNumber < id.sequenceNumber) {
+	fmt.Println(latest)
+	if latest == nil || latest.id.msTime < id.msTime || (latest.id.msTime == id.msTime && latest.id.sequenceNumber < id.sequenceNumber) {
 		s.entries = append(s.entries, streamEntry{id})
 		return nil
 	}
 
-	return errors.New("invalid entry")
+	return errors.New("ERR The ID specified in XADD is equal or smaller than the target stream top item")
 }
 
-func (s Stream) top() *streamEntry {
+func (s *Stream) top() *streamEntry {
 	if len(s.entries) == 0 {
 		return nil
 	}
@@ -342,14 +348,16 @@ func handleCommandStreamAdd(cmd []utils.Resp) ([]byte, error) {
 
 	stream, ok := cache.getKey(key)
 	if !ok {
-		stream = cacheEntry{
-			entryType: ENTRY_STREAM,
-			value:     Stream{make([]streamEntry, 0, 1)},
-		}
-		cache.setKey(key, stream, time.Time{}, ENTRY_STREAM)
+		stream = cache.setKey(key,
+			&Stream{make([]streamEntry, 0, 1)},
+			time.Time{},
+			ENTRY_STREAM)
 	}
 
-	stream.value.(Stream).append(id)
+	err := stream.value.(*Stream).append(id)
+	if err != nil {
+		return utils.EncodeResp(err.Error(), utils.ERROR)
+	}
 	return utils.EncodeResp(id, utils.STRING)
 }
 

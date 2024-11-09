@@ -13,6 +13,7 @@ const (
 	STRING        = '$'
 	INTEGER       = ':'
 	ARRAY         = '*'
+	ERROR         = '-'
 )
 
 var CLRF = []byte{'\r', '\n'}
@@ -116,6 +117,8 @@ func EncodeResp(val any, valType RespType) ([]byte, error) {
 		return encodeArray(val.([]Resp))
 	case INTEGER:
 		return encodeInt(val.(int))
+	case ERROR:
+		return encodeError(val.(string))
 	default:
 		return nil, nil
 	}
@@ -134,6 +137,10 @@ func encodeString(val string) ([]byte, error) {
 
 func encodeSimpleString(val string) ([]byte, error) {
 	return []byte(string(SIMPLE_STRING) + val + "\r\n"), nil
+}
+
+func encodeError(val string) ([]byte, error) {
+	return []byte(string(ERROR) + val + "\r\n"), nil
 }
 
 func encodeArray(val []Resp) ([]byte, error) {
