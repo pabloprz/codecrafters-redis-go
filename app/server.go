@@ -94,14 +94,26 @@ type streamId struct {
 	sequenceNumber int
 }
 
-func streamIdFromString(id string) streamId {
+func (s *Stream) streamIdFromString(id string) streamId {
 	splitted := strings.Split(id, "-")
 	if len(splitted) < 2 {
-		return streamId{0, 0}
+		return streamId{int(time.Now().UnixMilli()), 0}
 	}
 
 	ms, _ := strconv.Atoi(splitted[0])
-	seq, _ := strconv.Atoi(splitted[1])
+	seq := 0
+	if splitted[1] == "*" {
+		prev := s.top()
+		if ms == 0 {
+			seq = 1
+		}
+		if prev != nil && prev.id.msTime == ms {
+			seq = prev.id.sequenceNumber + 1
+		}
+	} else {
+		seq, _ = strconv.Atoi(splitted[1])
+	}
+
 	return streamId{
 		ms,
 		seq,
@@ -120,21 +132,19 @@ type Stream struct {
 	entries []streamEntry
 }
 
-func (s *Stream) append(input string) error {
-	id := streamIdFromString(input)
+func (s *Stream) append(input string) (streamId, error) {
+	id := s.streamIdFromString(input)
 	if id.msTime < 0 || id.sequenceNumber < 0 || (id.msTime == 0 && id.sequenceNumber == 0) {
-		return errors.New("ERR The ID specified in XADD must be greater than 0-0")
+		return id, errors.New("ERR The ID specified in XADD must be greater than 0-0")
 	}
 
-	fmt.Println(s.entries)
 	latest := s.top()
-	fmt.Println(latest)
 	if latest == nil || latest.id.msTime < id.msTime || (latest.id.msTime == id.msTime && latest.id.sequenceNumber < id.sequenceNumber) {
 		s.entries = append(s.entries, streamEntry{id})
-		return nil
+		return id, nil
 	}
 
-	return errors.New("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+	return id, errors.New("ERR The ID specified in XADD is equal or smaller than the target stream top item")
 }
 
 func (s *Stream) top() *streamEntry {
@@ -354,11 +364,11 @@ func handleCommandStreamAdd(cmd []utils.Resp) ([]byte, error) {
 			ENTRY_STREAM)
 	}
 
-	err := stream.value.(*Stream).append(id)
+	streamId, err := stream.value.(*Stream).append(id)
 	if err != nil {
 		return utils.EncodeResp(err.Error(), utils.ERROR)
 	}
-	return utils.EncodeResp(id, utils.STRING)
+	return utils.EncodeResp(streamId.String(), utils.STRING)
 }
 
 func handleCommandSet(cmd []utils.Resp) ([]byte, error) {
